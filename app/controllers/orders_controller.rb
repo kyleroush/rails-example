@@ -1,5 +1,4 @@
 require 'active_merchant'
-include ActiveMerchant::Billing
 
 class OrdersController < ApplicationController
   def create
@@ -11,14 +10,14 @@ class OrdersController < ApplicationController
 
   def checkout
     @order = Order.find(params[:id])
-    result = purchase
-    render json: { message: result }, status: :ok
+    purchase
+    @order.update(paid_at: Time.now)
+    render json: order_json, status: :ok
   end
 
   private
 
   def purchase
-    amount = 1000
     gateway = ActiveMerchant::Billing::TrustCommerceGateway.new(
       :login => 'TestMerchant',
       :password => 'password',
@@ -32,14 +31,12 @@ class OrdersController < ApplicationController
       :verification_value => '000',
     )
     if credit_card.validate.empty?
-      response = gateway.purchase(@order.total, credit_card)
-      if response.success?
-        "Successfully charged $#{sprintf("%.2f", amount / 100)} to the credit card #{credit_card.display_number}"
-      else
-        raise StandardError, response.message
+      response = gateway.purchase(@order.total_amount * 100, credit_card)
+      unless response.success?
+        raise Error::PaymentError, response.message
       end
     else
-      raise StandardError, credit_card.validate
+      raise Error::InvalidCreditCardError, credit_card.validate
     end
   end
 

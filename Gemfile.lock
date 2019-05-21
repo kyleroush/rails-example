@@ -86,6 +86,10 @@ GEM
       guard (~> 2.2)
       guard-compat (~> 1.1)
     guard-compat (1.2.1)
+    guard-migrate (2.0.0)
+      activerecord (>= 4.1.0)
+      guard (~> 2.3)
+      guard-compat (~> 1.1)
     guard-rspec (4.7.3)
       guard (~> 2.1)
       guard-compat (~> 1.1)
@@ -246,6 +250,7 @@ DEPENDENCIES
   factory_bot_rails (~> 4.0)
   faker
   guard-bundler
+  guard-migrate
   guard-rspec
   guard-rubocop
   listen (>= 3.0.5, < 3.2)

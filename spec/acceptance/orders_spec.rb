@@ -99,15 +99,15 @@ RSpec.describe 'Orders API', type: :request do
   end
 
   describe 'POST /order/:order_id/checkout' do
-    purchase_response = nil
+    gateway_mock, credit_card_mock, purchase_response_mock = nil
 
     let!(:orders) do
       create_list(:order, 3)
     end
 
-    let(:order_id) { orders.first.id }
+    let(:order) { orders.first }
 
-    let(:valid_payment_information) do
+    let(:payment_information) do
       {
         first_name: 'Bob',
         last_name: 'Bobsen',
@@ -118,27 +118,112 @@ RSpec.describe 'Orders API', type: :request do
       }
     end
 
-    before do
-      purchase_response = instance_double('ActiveMerchant::Billing::Response')
-      allow(purchase_response).to receive(:success?).and_return(true)
+    before do |example|
+      allow(ActiveMerchant::Billing::CreditCard).
+        to receive(:new) do |args|
+          credit_card_mock = instance_double('ActiveMerchant::Billing::CreditCard', args)
+          allow(credit_card_mock).to receive(:validate).and_return(
+            case example.metadata[:payment_information]
+            when :valid, nil then []
+            when :invalid then ['illegal characters']
+            end
+          )
+          credit_card_mock
+        end
 
-      allow_any_instance_of(ActiveMerchant::Billing::TrustCommerceGateway).
-        to receive(:purchase).
-        with(kind_of(Numeric), kind_of(ActiveMerchant::Billing::CreditCard)).
-        and_return(purchase_response)
+      allow(ActiveMerchant::Billing::TrustCommerceGateway).
+        to receive(:new) do |args|
+          gateway_mock = instance_double('ActiveMerchant::Billing::TrustCommerceGateway')
+          purchase_response_mock = double('Gateway purchase response')
+          allow(purchase_response_mock).to receive(:success?).and_return(
+            case example.metadata[:purchase]
+            when :success, nil then true
+            when :fail then false
+            end
+          )
+          allow(purchase_response_mock).to receive(:message).and_return('message')
+          allow(gateway_mock).to receive(:purchase).and_return(purchase_response_mock)
+          gateway_mock
+        end
 
-      post "/orders/#{order_id}/checkout", params: valid_payment_information
+      order_id = case example.metadata[:requested_order]
+                 when :not_paid, nil then order.id
+                 when :unknown then 713705
+                 end
+      post "/orders/#{order_id}/checkout", params: payment_information
     end
 
-    context 'when the request contains valid payment information' do
-      context 'when purchase is successful' do
-        it 'returns status code 200' do
-          expect(response).to have_http_status(200)
+    context 'when the requested order exist and has not been paid yet' do
+      context 'when the request contains valid payment information' do
+        it 'creates a CreditCard instance with the right information' do
+          expect(ActiveMerchant::Billing::CreditCard).
+            to have_received(:new).
+            with(payment_information)
         end
 
-        it 'calls purchase and check if the response is success' do
-          expect(purchase_response).to have_received(:success?)
+        it 'creates a Gateway instance with login information' do
+          # TODO
         end
+
+        it 'calls purchase on Gateway' do
+          expect(gateway_mock).
+            to have_received(:purchase).
+            with(order.total_amount * 100, credit_card_mock)
+        end
+
+        it 'checks if response is success' do
+          expect(purchase_response_mock).to have_received(:success?)
+        end
+
+        context 'when purchase is successful', purchase: :success do
+          before do
+            allow(purchase_response_mock).to receive(:success?).and_return(true)
+          end
+
+          it 'updates order as paid' do
+            expect(order.reload.paid_at).to be_within(1.second).of Time.now
+          end
+
+          it 'returns status code 200' do
+            expect(response).to have_http_status(200)
+          end
+        end
+
+        context 'when purchase fail', purchase: :fail do
+          it 'do not update order as paid' do
+            expect(order.reload.paid_at).to be_nil
+          end
+
+          it 'returns status code 500' do
+            expect(response).to have_http_status(500)
+          end
+        end
+      end
+
+      context 'when the request does not contain valid payment information',
+              payment_information: :invalid do
+        it 'returns status 422' do
+          expect(response).to have_http_status(422)
+        end
+      end
+    end
+
+    context 'when the requested order exist and has already been paid' do
+      it 'returns status 409' do
+        # TODO
+        # expect(response).to have_http_status(409)
+        # expect(response).to have_http_status(200)
+      end
+
+      # it 'do not process payment' do
+      #   # TODO
+      #   # expect(gateway_mock).to have_not_received(:purchase)
+      # end
+    end
+
+    context 'when the requested order does not exist', requested_order: :unknown do
+      it 'returns status 404' do
+        expect(response).to have_http_status(404)
       end
     end
   end
