@@ -113,15 +113,15 @@ RSpec.describe 'Orders API', type: :request do
         last_name: 'Bobsen',
         number: '4242424242424242',
         month: '8',
-        year: Time.now.year + 1,
+        year: (Time.now.year + 1).to_s,
         verification_value: '000',
       }
     end
 
     before do |example|
       allow(ActiveMerchant::Billing::CreditCard).
-        to receive(:new) do |args|
-          credit_card_mock = instance_double('ActiveMerchant::Billing::CreditCard', args)
+        to receive(:new) do
+          credit_card_mock = instance_double('ActiveMerchant::Billing::CreditCard')
           allow(credit_card_mock).to receive(:validate).and_return(
             case example.metadata[:payment_information]
             when :valid, nil then []
@@ -132,7 +132,7 @@ RSpec.describe 'Orders API', type: :request do
         end
 
       allow(ActiveMerchant::Billing::TrustCommerceGateway).
-        to receive(:new) do |args|
+        to receive(:new) do
           gateway_mock = instance_double('ActiveMerchant::Billing::TrustCommerceGateway')
           purchase_response_mock = double('Gateway purchase response')
           allow(purchase_response_mock).to receive(:success?).and_return(
@@ -158,7 +158,7 @@ RSpec.describe 'Orders API', type: :request do
         it 'creates a CreditCard instance with the right information' do
           expect(ActiveMerchant::Billing::CreditCard).
             to have_received(:new).
-            with(payment_information)
+            with(payment_information.with_indifferent_access)
         end
 
         it 'creates a Gateway instance with login information' do
