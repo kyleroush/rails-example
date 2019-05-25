@@ -7,6 +7,10 @@ class Order < ApplicationRecord
     0
   end
   
+  def one
+    1
+  end
+  
   def total_amount
     line_items.reduce(0) { |acc, current| acc + current.unit_price * current.quantity }
   end
